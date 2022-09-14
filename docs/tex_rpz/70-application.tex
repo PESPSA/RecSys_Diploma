@@ -1,0 +1,121 @@
+\section*{ПРИЛОЖЕНИЕ A}
+\addcontentsline{toc}{section}{ПРИЛОЖЕНИЕ A}
+
+
+\begin{lstlisting}[language=Python, caption=Предобработка текста.]
+# Оставляем только кириллические символы
+regex = re.compile(u"[A-Za-z]+")
+
+def words_only(text, regex=regex):
+return " ".join(regex.findall(str(text)))
+
+df.body = df.body.str.lower()
+df.loc[:, 'body'] = df.body.apply(words_only)
+
+# Удаляем стоп-слова
+mystopwords = stopwords.words('english') + ['-', '-']
+
+def  remove_stopwords(text, mystopwords = mystopwords):
+try:
+return u" ".join([token for token in text.split() if not token in mystopwords])
+except:
+return u""
+
+df.body = df.body.apply(remove_stopwords)   
+
+# нормализуем текст
+wordnet_lemmatizer = WordNetLemmatizer()
+def lemmatize(text, lemmatizer=wordnet_lemmatizer):
+word_list = nltk.word_tokenize(text)
+lemmatized_output = ' '.join([lemmatizer.lemmatize(w) for w in word_list])
+return lemmatized_output
+
+df.body = df.body.apply(lemmatize)
+\end{lstlisting}
+\pagebreak
+\setcounter{lstlisting}{0}
+\renewcommand\thelstlisting{2.\arabic{lstlisting}}
+
+\begin{lstlisting}[language=Python, caption=Реализация модели Гауссовой смеси.]
+class GMM:
+	def __init__(self, n_components, max_iter = 100, comp_names=None):
+		# инициализируем начальные параметры
+		# n_components - количество кластеров
+		# max_iter - максимальное количество итераций алгоритма
+		self.n_componets = n_components
+		self.max_iter = max_iter
+		if comp_names == None:
+			self.comp_names = [f"comp{index}" for index in range(self.n_componets)]
+		else:
+			self.comp_names = comp_names
+		# массив с отношениями колиества элементов в каждом кластере ко всем элементам данных
+		self.pi = [1/self.n_componets for comp in range(self.n_componets)]
+		
+	def predict(self, X):
+		# выбор кластера к которому образец имеет наибольшую вероятность попадания
+		probas = []
+		for n in range(len(X)):
+			probas.append([self.multivariate_normal(X[n], self.mean_vector[k], self.covariance_matrixes[k])
+			for k in range(self.n_componets)])
+		cluster = []
+		for proba in probas:
+			cluster.append(self.comp_names[proba.index(max(proba))])
+		return cluster
+	
+	def multivariate_normal(self, X, mean_vector, covariance_matrix):
+		# вычисление вектора определяющего многомерное нормальное распределение
+		return (2*np.pi)**(-len(X)/2)*np.linalg.det(covariance_matrix)**(-1/2)*np.exp(-np.dot(np.dot((X-mean_vector).T, np.linalg.inv(covariance_matrix)), (X-mean_vector))/2)
+\end{lstlisting}
+\pagebreak
+
+\begin{lstlisting}[language=Python, caption=Реализация модели Гауссовой смеси.]
+	def fit(self, X):
+		# разделение входных данных на количество кластеров
+		new_X = np.array_split(X, self.n_componets)
+		# получение вектора средних для каждого столбца каждого кластера
+		self.mean_vector = [np.mean(x, axis=0) for x in new_X]
+		# получение матрицы ковариаций для каждого кластера
+		self.covariance_matrixes = [np.cov(x.T) for x in new_X]
+		del new_X
+		# начало итеративного алгоритма максимизации ожидания
+		for iteration in range(self.max_iter):
+		''' ----------------------   E - STEP   ---------------------- '''
+		'''
+		вычисление матрицы в которой строки - это элемент данных,
+		а столбцец это кластер, следовательно каждый элемент матрицы
+		это вероятность принадлежности элемента к столбцу т. е. кластеру
+		'''
+			self.r = np.zeros((len(X), self.n_componets))
+			for n in range(len(X)):
+				for k in range(self.n_componets):
+				# вычисление вероятности принадлежности элемента к кластеру
+					self.r[n][k] = self.pi[k] * self.multivariate_normal(X[n], self.mean_vector[k], self.covariance_matrixes[k]) / sum([self.pi[j]*self.multivariate_normal(X[n], self.mean_vector[j], self.covariance_matrixes[j]) for j in range(self.n_componets)])
+			# аычисление списка сумм столбцов матрицы
+			N = np.sum(self.r, axis=0)
+\end{lstlisting}
+\pagebreak
+
+\begin{lstlisting}[language=Python, caption=Реализация модели Гауссовой смеси.]
+		''' ----------------------   M - STEP   ---------------------- '''
+			# инициализация вектора средних
+			self.mean_vector = np.zeros((self.n_componets, len(X[0])))
+			# обновление векторов средних
+			for k in range(self.n_componets):
+				for n in range(len(X)):
+					self.mean_vector[k] += self.r[n][k] * X[n]
+			self.mean_vector = [1/N[k]*self.mean_vector[k] for k in range(self.n_componets)]
+			# инициализация матрицы ковариации
+			self.covariance_matrixes = [np.zeros((len(X[0]), len(X[0]))) for k in range(self.n_componets)]
+			# обновление матриц ковариаций
+			for k in range(self.n_componets):
+				self.covariance_matrixes[k] = np.cov(X.T, aweights=(self.r[:, k]), ddof=0)
+			self.covariance_matrixes = [1/N[k]*self.covariance_matrixes[k] for k in range(self.n_componets)]
+			# обнолвение списка долей кластера
+			self.pi = [N[k]/len(X) for k in range(self.n_componets)]
+\end{lstlisting}
+
+\renewcommand\thelstlisting{\arabic{lstlisting}}
+\setcounter{lstlisting}{2}
+
+
+\pagebreak
